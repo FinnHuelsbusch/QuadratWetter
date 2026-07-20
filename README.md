@@ -14,16 +14,17 @@ A self-hosted weather dashboard for Mannheim's public climate sensor network ([M
 
 ```bash
 git clone <repo>
-cd mannheim-wetter
+cd QuadratWetter
 
 # Optional: change passwords in .env before first run
+cp example.env .env
 cat .env
 
 docker compose up -d
 docker compose logs -f scraper   # watch backfill + first scrape
 ```
 
-Open Grafana at **http://localhost:3000** (default credentials: `admin` / `mannheimwetter`).
+Open Grafana at **http://localhost:3000** (default credentials: `admin` / `QuadratWetter`).
 
 ## How it works
 
@@ -79,8 +80,8 @@ targets: all
 Passwords are set in `.env`:
 
 ```
-DB_PASSWORD=mannheimwetter
-GRAFANA_PASSWORD=mannheimwetter
+DB_PASSWORD=QuadratWetter
+GRAFANA_PASSWORD=QuadratWetter
 ```
 
 ## Project structure
