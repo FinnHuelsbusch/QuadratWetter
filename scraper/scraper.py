@@ -1,8 +1,12 @@
 """Mannheim weather scraper.
 
-Polls the MVV Smart Cities dashboard API and writes readings to TimescaleDB.
-Station list is auto-discovered from the map endpoint; the three metric UUIDs
-are hardcoded (extracted from github.com/rathlinus/smartmannheim).
+Startup sequence:
+  1. Connect to DB
+  2. Download/cache Excel catalog (24h TTL)
+  3. list_stations() from API
+  4. Upsert stations table (with Excel-matched display names and sensor flags)
+  5. Run historical backfill (only matched stations)
+  6. Scrape loop — only calls metrics where has_* = True
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ import asyncpg
 import yaml
 
 from backfill import run_backfill
+from catalog import MatchedStation, load_catalog
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,10 +38,14 @@ ACCOUNT_ID = "6233165a7faac33eade2c539"
 DASHBOARD_TOKEN = "268b1470-a99b-4244-942e-d8fbdba033ab"
 APP_ID = DASHBOARD_TOKEN
 MAP_TILE_ID = "3a1e9ee5-9d72-4727-8832-9d46fc8c0395"
+PARAMS = {"accountId": ACCOUNT_ID, "id": DASHBOARD_TOKEN}
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30)
+MAX_CONCURRENT = 20
 
 METRICS: tuple[dict[str, Any], ...] = (
     {
         "key": "temperature",
+        "flag": "has_temp",
         "timeseries_id": "536a8e89-34c6-4a23-8bac-dec7ae840ee0",
         "tile_id": "b56d6160-6cf4-48fa-be5a-51581216d1a2",
         "display_name": "Klimasensor, Temperatur",
@@ -45,6 +54,7 @@ METRICS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "humidity",
+        "flag": "has_humidity",
         "timeseries_id": "de1bedd9-1b2c-40ea-8434-ca7895362ef3",
         "tile_id": "930d05a5-cefe-4dda-9190-db40cf82abbc",
         "display_name": "Klimasensor, Luftfeuchtigkeit",
@@ -53,6 +63,7 @@ METRICS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "wind_speed",
+        "flag": "has_wind",
         "timeseries_id": "af7132bc-38e7-425f-8695-a8a94701a4b6",
         "tile_id": "13c34302-b5e3-433c-8602-aed08d7cf390",
         "display_name": "Durchschn. Windgeschwindigkeit",
@@ -61,12 +72,7 @@ METRICS: tuple[dict[str, Any], ...] = (
     },
 )
 
-# ── API client ─────────────────────────────────────────────────────────────────
-
-PARAMS = {"accountId": ACCOUNT_ID, "id": DASHBOARD_TOKEN}
-REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30)
-MAX_CONCURRENT = 20
-
+# ── API ────────────────────────────────────────────────────────────────────────
 
 async def list_stations(session: aiohttp.ClientSession) -> list[dict[str, Any]]:
     body = {"appId": APP_ID, "dashboardTemplateTileId": MAP_TILE_ID}
@@ -84,18 +90,15 @@ async def get_indicator(
     now = datetime.now(timezone.utc)
     frm = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     to = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
     body = {
-        "timeseries": [
-            {
-                "timeSeriesId": metric["timeseries_id"],
-                "aggregationFunction": "",
-                "gapFill": "None",
-                "displayName": metric["display_name"],
-                metric["digits_field"]: metric["digits"],
-                "definitionType": "timeseries",
-            }
-        ],
+        "timeseries": [{
+            "timeSeriesId": metric["timeseries_id"],
+            "aggregationFunction": "",
+            "gapFill": "None",
+            "displayName": metric["display_name"],
+            metric["digits_field"]: metric["digits"],
+            "definitionType": "timeseries",
+        }],
         "from": frm,
         "to": to,
         "accountId": ACCOUNT_ID,
@@ -105,7 +108,6 @@ async def get_indicator(
         "appId": APP_ID,
         "entityId": location_id,
     }
-
     for attempt in range(3):
         try:
             async with sem:
@@ -120,72 +122,65 @@ async def get_indicator(
             return None
         except Exception as exc:
             if attempt == 2:
-                log.debug("get_indicator failed after 3 attempts: %s", exc)
+                log.debug("get_indicator failed: %s", exc)
                 return None
             await asyncio.sleep(2 ** attempt)
     return None
 
-
-# ── DB helpers ─────────────────────────────────────────────────────────────────
+# ── DB ─────────────────────────────────────────────────────────────────────────
 
 INSERT_SQL = """
-INSERT INTO measurements (time, location_id, station_name, metric, value, warning)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (time, station_name, metric) DO NOTHING
+INSERT INTO measurements (time, location_id, metric, value, warning)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (time, location_id, metric) DO NOTHING
 """
 
 UPSERT_STATION_SQL = """
-INSERT INTO stations (station_name, location_id, display_name, lat, lon, address)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (station_name) DO UPDATE SET
-    location_id  = EXCLUDED.location_id,
-    display_name = EXCLUDED.display_name,
-    lat          = EXCLUDED.lat,
-    lon          = EXCLUDED.lon,
-    address      = EXCLUDED.address,
-    updated_at   = now()
-"""
-
-CREATE_STATIONS_TABLE = """
-CREATE TABLE IF NOT EXISTS stations (
-    station_name    TEXT        PRIMARY KEY,
-    location_id     UUID,
-    display_name    TEXT,
-    lat             DOUBLE PRECISION,
-    lon             DOUBLE PRECISION,
-    address         TEXT,
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-)
+INSERT INTO stations (location_id, name, display_name, lat, lon,
+                      has_temp, has_humidity, has_wind, xlsx_matched, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+ON CONFLICT (location_id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    lat           = EXCLUDED.lat,
+    lon           = EXCLUDED.lon,
+    has_temp      = EXCLUDED.has_temp,
+    has_humidity  = EXCLUDED.has_humidity,
+    has_wind      = EXCLUDED.has_wind,
+    xlsx_matched  = EXCLUDED.xlsx_matched,
+    updated_at    = now()
 """
 
 
-async def sync_station_metadata(
-    pool: asyncpg.Pool, stations: list[dict[str, Any]]
+async def upsert_stations(
+    pool: asyncpg.Pool,
+    api_stations: list[dict[str, Any]],
+    location_map: dict[str, MatchedStation],
 ) -> None:
+    rows = []
+    for s in api_stations:
+        loc_id_str = s["locationId"]
+        try:
+            loc_id = uuid.UUID(loc_id_str)
+        except ValueError:
+            continue
+        coords = s.get("location", {}).get("coordinates", [None, None])
+        lon_f, lat_f = coords[0], coords[1]
+        m = location_map[loc_id_str]
+        rows.append((
+            loc_id,
+            s.get("name", ""),
+            m.display_name,
+            lat_f,
+            lon_f,
+            m.has_temp,
+            m.has_humidity,
+            m.has_wind,
+            m.xlsx_matched,
+        ))
     async with pool.acquire() as conn:
-        await conn.execute(CREATE_STATIONS_TABLE)
-        rows = []
-        for s in stations:
-            name = s.get("name", "")
-            loc_id = s.get("locationId")
-            coords = s.get("location", {}).get("coordinates", [None, None])
-            lon = coords[0] if len(coords) > 1 else None
-            lat = coords[1] if len(coords) > 1 else None
-            address = s.get("address", "").strip(" ,")
-            try:
-                loc_uuid = uuid.UUID(loc_id) if loc_id else None
-            except ValueError:
-                loc_uuid = None
-            rows.append((
-                name,
-                loc_uuid,
-                name,
-                lat,
-                lon,
-                address or None,
-            ))
         await conn.executemany(UPSERT_STATION_SQL, rows)
-    log.info("Synced metadata for %d stations", len(rows))
+    log.info("Upserted %d stations", len(rows))
 
 
 async def connect_db() -> asyncpg.Pool:
@@ -203,7 +198,6 @@ async def connect_db() -> asyncpg.Pool:
             log.info("Waiting for database (%d/20): %s", attempt + 1, exc)
             await asyncio.sleep(3)
     raise RuntimeError("Could not connect to database after 20 attempts")
-
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -224,28 +218,31 @@ def filter_stations(
         if any(p in s.get("name", "").lower() for p in patterns)
     ]
 
-
 # ── Scrape cycle ───────────────────────────────────────────────────────────────
 
 async def scrape_once(
     session: aiohttp.ClientSession,
     pool: asyncpg.Pool,
     stations: list[dict[str, Any]],
+    location_map: dict[str, MatchedStation],
 ) -> None:
     sem = asyncio.Semaphore(MAX_CONCURRENT)
 
-    tasks = [
-        (station, metric)
-        for station in stations
-        for metric in METRICS
-    ]
+    # Build task list — skip metrics the station doesn't have
+    tasks = []
+    for station in stations:
+        loc_id = station["locationId"]
+        matched = location_map.get(loc_id)
+        for metric in METRICS:
+            if matched and not getattr(matched, metric["flag"], True):
+                continue
+            tasks.append((station, metric))
 
     log.info("Scraping %d station×metric combinations ...", len(tasks))
 
     async def fetch_and_store(station: dict, metric: dict) -> bool:
-        location_id = station["locationId"]
-        station_name = station.get("name", location_id)
-        result = await get_indicator(session, sem, location_id, metric)
+        loc_id_str = station["locationId"]
+        result = await get_indicator(session, sem, loc_id_str, metric)
         if result is None:
             return False
         ts_str = result.get("timestamp")
@@ -255,13 +252,15 @@ async def scrape_once(
             return False
         value = result.get("indicator")
         warning = result.get("warning")
-
+        try:
+            loc_id = uuid.UUID(loc_id_str)
+        except ValueError:
+            return False
         async with pool.acquire() as conn:
             await conn.execute(
                 INSERT_SQL,
                 ts,
-                uuid.UUID(location_id),
-                station_name,
+                loc_id,
                 metric["key"],
                 float(value) if value is not None else None,
                 str(warning) if warning is not None else None,
@@ -272,11 +271,9 @@ async def scrape_once(
         *[fetch_and_store(s, m) for s, m in tasks],
         return_exceptions=True,
     )
-
     ok = sum(1 for r in results if r is True)
     err = sum(1 for r in results if r is not True)
-    log.info("Done: %d inserted/upserted, %d skipped/failed", ok, err)
-
+    log.info("Done: %d inserted, %d skipped/failed", ok, err)
 
 # ── Main loop ──────────────────────────────────────────────────────────────────
 
@@ -284,29 +281,29 @@ async def main() -> None:
     config = load_config()
     interval = int(config.get("scrape_interval", 600))
     targets = config.get("targets", "all")
+    backfill_days = int(config.get("backfill_days", 7))
 
     pool = await connect_db()
 
     connector = aiohttp.TCPConnector(limit=50)
     async with aiohttp.ClientSession(connector=connector) as session:
         log.info("Fetching station list ...")
-        stations = await list_stations(session)
-        log.info("Discovered %d stations total", len(stations))
+        api_stations = await list_stations(session)
+        log.info("Discovered %d stations total", len(api_stations))
 
-        await sync_station_metadata(pool, stations)
+        location_map, csv_to_loc = await load_catalog(session, api_stations)
 
-        await run_backfill(pool, int(config.get("backfill_days", 30)))
+        await upsert_stations(pool, api_stations, location_map)
 
-        stations = filter_stations(stations, targets)
-        if targets == "all":
-            log.info("Scraping all %d stations", len(stations))
-        else:
-            log.info("Filtered to %d stations matching %s", len(stations), targets)
+        await run_backfill(pool, backfill_days, csv_to_loc)
+
+        stations = filter_stations(api_stations, targets)
+        log.info("Scraping %d stations", len(stations))
 
         while True:
             start = asyncio.get_event_loop().time()
             try:
-                await scrape_once(session, pool, stations)
+                await scrape_once(session, pool, stations, location_map)
             except Exception as exc:
                 log.error("Scrape cycle failed: %s", exc)
             elapsed = asyncio.get_event_loop().time() - start

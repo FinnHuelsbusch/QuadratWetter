@@ -1,179 +1,431 @@
 {
   "__inputs": [],
   "__requires": [],
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "description": "Stations deviating significantly from the network mean",
   "editable": true,
   "id": null,
   "links": [
-    { "title": "← Main", "url": "/d/mannheim-wetter", "type": "link", "targetBlank": false }
+    {
+      "title": "\u2190 Main",
+      "url": "/d/mannheim-wetter",
+      "type": "link",
+      "targetBlank": false
+    }
   ],
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "title": "Temperature Outliers",
       "type": "row"
     },
     {
-      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "green", "value": null },
-            { "color": "yellow", "value": 2 },
-            { "color": "red", "value": 3 }
-          ]},
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
           "unit": "celsius"
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "deviation" },
+            "matcher": {
+              "id": "byName",
+              "options": "deviation"
+            },
             "properties": [
-              { "id": "displayName", "value": "Δ from mean (°C)" },
-              { "id": "unit", "value": "celsius" },
-              { "id": "custom.width", "value": 160 }
+              {
+                "id": "displayName",
+                "value": "\u0394 from mean (\u00b0C)"
+              },
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "°C" },
-            "properties": [{ "id": "custom.width", "value": 100 }]
+            "matcher": {
+              "id": "byName",
+              "options": "\u00b0C"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
           }
         ]
       },
-      "gridPos": { "h": 12, "w": 12, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
-      "options": { "footer": { "show": false }, "showHeader": true },
+      "options": {
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
           "format": "table",
-          "rawSql": "WITH latest AS (\n  SELECT DISTINCT ON (station_name) station_name, value\n  FROM measurements WHERE metric = 'temperature'\n  AND time > now() - INTERVAL '30 minutes'\n  ORDER BY station_name, time DESC\n),\nstats AS (\n  SELECT AVG(value) AS mean, STDDEV(value) AS std FROM latest\n)\nSELECT\n  l.station_name,\n  ROUND(l.value::numeric, 1) AS \"°C\",\n  ROUND((l.value - s.mean)::numeric, 2) AS deviation,\n  ROUND(s.mean::numeric, 1) AS \"network mean °C\"\nFROM latest l, stats s\nWHERE s.std > 0 AND ABS(l.value - s.mean) > ${sigma} * s.std\nORDER BY ABS(l.value - s.mean) DESC",
+          "rawSql": "WITH latest AS (\n  SELECT DISTINCT ON (m.location_id) m.location_id, m.value, s.display_name\n  FROM measurements m JOIN stations s ON s.location_id = m.location_id\n  WHERE m.metric = 'temperature' AND m.time > now() - INTERVAL '30 minutes'\n  ORDER BY m.location_id, m.time DESC\n),\nstats AS (SELECT AVG(value) AS mean, STDDEV(value) AS std FROM latest)\nSELECT l.display_name AS station, ROUND(l.value::numeric,1) AS \"\u00b0C\",\n  ROUND((l.value - s.mean)::numeric,2) AS deviation,\n  ROUND(s.mean::numeric,1) AS \"network mean \u00b0C\"\nFROM latest l, stats s\nWHERE s.std > 0 AND ABS(l.value - s.mean) > ${sigma} * s.std\nORDER BY ABS(l.value - s.mean) DESC",
           "refId": "A"
         }
       ],
-      "title": "Temperature — stations > ${sigma}σ from mean",
+      "title": "Temperature \u2014 stations > ${sigma}\u03c3 from mean",
       "type": "table"
     },
     {
-      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
-          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "green", "value": 15 },
-              { "color": "yellow", "value": 25 },
-              { "color": "orange", "value": 32 },
-              { "color": "red", "value": 37 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 15
+              },
+              {
+                "color": "yellow",
+                "value": 25
+              },
+              {
+                "color": "orange",
+                "value": 32
+              },
+              {
+                "color": "red",
+                "value": 37
+              }
             ]
           },
-          "unit": "celsius",
+          "unit": "none",
           "mappings": []
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lat"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lon"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "abs_dev"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "value"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              }
+            ]
+          }
+        ]
       },
-      "gridPos": { "h": 12, "w": 12, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
       "id": 2,
       "options": {
-        "basemap": { "config": {}, "name": "Basemap", "type": "default" },
-        "controls": { "mouseWheelZoom": true, "showAttribution": true, "showZoom": true },
+        "basemap": {
+          "config": {},
+          "name": "Basemap",
+          "type": "default"
+        },
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showZoom": true
+        },
         "layers": [
           {
             "config": {
               "showLegend": true,
               "style": {
-                "color": { "field": "value", "fixed": "dark-green" },
+                "color": {
+                  "field": "value",
+                  "fixed": "dark-green"
+                },
                 "opacity": 0.9,
-                "size": { "field": "abs_dev", "fixed": 8, "max": 24, "min": 6 },
-                "symbol": { "fixed": "img/icons/marker/circle.svg", "mode": "fixed" },
-                "symbolAlign": { "h": "center", "v": "center" }
+                "size": {
+                  "field": "abs_dev",
+                  "fixed": 8,
+                  "max": 24,
+                  "min": 6
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "h": "center",
+                  "v": "center"
+                }
               }
             },
-            "location": { "latitude": "lat", "longitude": "lon", "mode": "coords" },
+            "location": {
+              "latitude": "lat",
+              "longitude": "lon",
+              "mode": "coords"
+            },
             "name": "Outlier stations",
             "tooltip": true,
             "type": "markers"
           }
         ],
-        "tooltip": { "mode": "details" },
-        "view": { "allLayers": true, "id": "coords", "lat": 49.498, "lon": 8.49, "zoom": 11 }
+        "tooltip": {
+          "mode": "details"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "coords",
+          "lat": 49.498,
+          "lon": 8.49,
+          "zoom": 11
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
           "format": "table",
-          "rawSql": "WITH latest AS (\n  SELECT DISTINCT ON (m.station_name) m.station_name, m.value, s.lat, s.lon\n  FROM measurements m\n  JOIN stations s ON s.station_name = m.station_name\n  WHERE m.metric = 'temperature'\n  AND m.time > now() - INTERVAL '30 minutes'\n  AND s.lat IS NOT NULL\n  ORDER BY m.station_name, m.time DESC\n),\nstats AS (\n  SELECT AVG(value) AS mean, STDDEV(value) AS std FROM latest\n)\nSELECT\n  l.station_name, l.lat, l.lon, l.value,\n  ABS(l.value - s.mean) AS abs_dev\nFROM latest l, stats s\nWHERE s.std > 0 AND ABS(l.value - s.mean) > ${sigma} * s.std",
+          "rawSql": "WITH latest AS (\n  SELECT DISTINCT ON (m.location_id) m.location_id, m.value, s.lat, s.lon, s.display_name\n  FROM measurements m JOIN stations s ON s.location_id = m.location_id\n  WHERE m.metric = 'temperature' AND m.time > now() - INTERVAL '30 minutes'\n  AND s.lat IS NOT NULL\n  ORDER BY m.location_id, m.time DESC\n),\nstats AS (SELECT AVG(value) AS mean, STDDEV(value) AS std FROM latest)\nSELECT l.display_name AS \"Station\", l.lat, l.lon, l.value, ABS(l.value - s.mean) AS abs_dev\nFROM latest l, stats s\nWHERE s.std > 0 AND ABS(l.value - s.mean) > ${sigma} * s.std",
           "refId": "A"
         }
       ],
-      "title": "Outlier Map (dot size = deviation magnitude)",
+      "title": "Outlier Map (dot size = deviation)",
       "type": "geomap"
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
       "id": 101,
       "title": "Outlier History",
       "type": "row"
     },
     {
-      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 1, "fillOpacity": 0 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 0
+          },
           "unit": "celsius"
         },
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 14 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
       "id": 3,
       "options": {
-        "legend": { "calcs": ["lastNotNull", "min", "max"], "displayMode": "table", "placement": "right" },
-        "tooltip": { "mode": "multi" }
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "min",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
           "format": "time_series",
-          "rawSql": "SELECT time, value - AVG(value) OVER (PARTITION BY time_bucket('10 minutes', time)) AS \"Δ from mean (°C)\", station_name\nFROM (\n  SELECT\n    time_bucket('10 minutes', m.time) AS time,\n    m.station_name,\n    AVG(m.value) AS value\n  FROM measurements m\n  WHERE m.metric = 'temperature'\n    AND $__timeFilter(m.time)\n    AND m.station_name IN (\n      SELECT DISTINCT ON (station_name) station_name\n      FROM (\n        WITH latest AS (\n          SELECT DISTINCT ON (station_name) station_name, value\n          FROM measurements WHERE metric = 'temperature'\n          AND time > now() - INTERVAL '30 minutes'\n          ORDER BY station_name, time DESC\n        ),\n        stats AS (SELECT AVG(value) AS mean, STDDEV(value) AS std FROM latest)\n        SELECT l.station_name FROM latest l, stats s\n        WHERE s.std > 0 AND ABS(l.value - s.mean) > ${sigma} * s.std\n      ) o\n    )\n  GROUP BY 1, 2\n) bucketed\nORDER BY time",
+          "rawSql": "WITH outlier_ids AS (\n  WITH latest AS (\n    SELECT DISTINCT ON (location_id) location_id, value\n    FROM measurements WHERE metric = 'temperature'\n    AND time > now() - INTERVAL '30 minutes'\n    ORDER BY location_id, time DESC\n  ),\n  stats AS (SELECT AVG(value) AS mean, STDDEV(value) AS std FROM latest)\n  SELECT l.location_id FROM latest l, stats s\n  WHERE s.std > 0 AND ABS(l.value - s.mean) > ${sigma} * s.std\n)\nSELECT\n  time_bucket('10 minutes', m.time) AS time,\n  s.display_name,\n  AVG(m.value) - AVG(AVG(m.value)) OVER (PARTITION BY time_bucket('10 minutes', m.time)) AS \"\u0394 from mean (\u00b0C)\"\nFROM measurements m\nJOIN stations s ON s.location_id = m.location_id\nWHERE m.metric = 'temperature'\n  AND $__timeFilter(m.time)\n  AND m.location_id IN (SELECT location_id FROM outlier_ids)\nGROUP BY 1, s.display_name\nORDER BY 1",
           "refId": "A"
         }
       ],
-      "title": "Outlier stations — deviation from network mean over time",
+      "title": "Outlier stations \u2014 deviation from network mean over time",
       "type": "timeseries"
     }
   ],
   "refresh": "5m",
   "schemaVersion": 39,
-  "tags": ["weather", "mannheim", "outliers"],
+  "tags": [
+    "weather",
+    "mannheim",
+    "outliers"
+  ],
   "templating": {
     "list": [
       {
-        "current": { "text": "2", "value": "2" },
+        "current": {
+          "text": "2",
+          "value": "2"
+        },
         "hide": 0,
         "label": "Sigma threshold",
         "name": "sigma",
         "options": [
-          { "selected": false, "text": "1", "value": "1" },
-          { "selected": true,  "text": "2", "value": "2" },
-          { "selected": false, "text": "3", "value": "3" }
+          {
+            "selected": false,
+            "text": "1",
+            "value": "1"
+          },
+          {
+            "selected": true,
+            "text": "2",
+            "value": "2"
+          },
+          {
+            "selected": false,
+            "text": "3",
+            "value": "3"
+          }
         ],
         "query": "1,2,3",
         "type": "custom"
       }
     ]
   },
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "Europe/Berlin",
-  "title": "Mannheim Wetter — Outliers",
+  "title": "Mannheim Wetter \u2014 Outliers",
   "uid": "mannheim-outliers",
-  "version": 1
+  "version": 2
 }
