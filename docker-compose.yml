@@ -13,6 +13,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    ports:
+      - "5432:5432"
 
   grafana:
     image: grafana/grafana:latest
@@ -32,8 +34,8 @@ services:
 
   scraper:
     build: ./scraper
-    volumes:
-      - ./scraper/config.yaml:/app/config.yaml:ro
+    env_file:
+      - .env
     environment:
       DB_HOST: timescaledb
       DB_PORT: "5432"

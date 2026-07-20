@@ -203,8 +203,11 @@ async def connect_db() -> asyncpg.Pool:
 
 def load_config() -> dict[str, Any]:
     path = os.environ.get("CONFIG_PATH", "/app/config.yaml")
+    if not os.path.isfile(path):
+        log.warning("Config file %s not found or is not a file, using defaults", path)
+        return {}
     with open(path) as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}
 
 
 def filter_stations(
@@ -278,10 +281,9 @@ async def scrape_once(
 # ── Main loop ──────────────────────────────────────────────────────────────────
 
 async def main() -> None:
-    config = load_config()
-    interval = int(config.get("scrape_interval", 600))
-    targets = config.get("targets", "all")
-    backfill_days = int(config.get("backfill_days", 7))
+    interval = int(os.getenv("SCRAPE_INTERVAL", "600"))
+    targets = os.getenv("TARGETS", "all")
+    backfill_days = int(os.getenv("BACKFILL_DAYS", "7"))
 
     pool = await connect_db()
 
