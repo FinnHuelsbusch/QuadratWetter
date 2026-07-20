@@ -1551,18 +1551,6 @@
         "tooltip": "",
         "type": "link",
         "url": "/d/mannheim-outliers"
-      },
-      {
-        "asDropdown": false,
-        "icon": "",
-        "includeVars": false,
-        "keepTime": false,
-        "tags": [],
-        "targetBlank": true,
-        "title": "Debug",
-        "tooltip": "",
-        "type": "link",
-        "url": "/d/mannheim-debug"
       }
     ],
     "liveNow": false,
