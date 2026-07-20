@@ -1,0 +1,21 @@
+# How often to scrape, in seconds. Sensors update every 10 minutes.
+scrape_interval: 600
+
+# Historical backfill: how many days back to import on first startup.
+# The actual oldest available data is 2024-02-20; values larger than the
+# available history are capped automatically.
+# Set to 0 to skip the backfill entirely.
+backfill_days: 7
+
+# Which stations to scrape.
+#
+# "all"   - discover and scrape all stations returned by the map API (~414)
+# [list]  - scrape only stations whose name contains at least one of the
+#           given strings (case-insensitive substring match)
+#
+# Examples:
+#   targets: all
+#   targets:
+#     - "2305LW012"
+#     - "0101-001"
+targets: all

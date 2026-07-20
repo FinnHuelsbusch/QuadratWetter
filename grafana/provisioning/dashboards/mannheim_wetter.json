@@ -1,0 +1,387 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "description": "Mannheim Klimamessnetz — live map, history",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Outliers", "url": "/d/mannheim-outliers", "type": "link", "targetBlank": true },
+    { "title": "Debug",    "url": "/d/mannheim-debug",    "type": "link", "targetBlank": true }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Current Conditions",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "blue",             "value": null },
+            { "color": "super-light-blue", "value": 5 },
+            { "color": "green",            "value": 15 },
+            { "color": "yellow",           "value": 25 },
+            { "color": "orange",           "value": 32 },
+            { "color": "red",              "value": 37 }
+          ]},
+          "unit": "celsius",
+          "mappings": [],
+          "links": [{ "title": "Select station", "url": "/d/mannheim-wetter?var-station=${__data.fields.station_name}", "targetBlank": false }]
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 14, "w": 14, "x": 0, "y": 1 },
+      "id": 10,
+      "options": {
+        "basemap": { "config": {}, "name": "Basemap", "type": "default" },
+        "controls": { "mouseWheelZoom": true, "showAttribution": true, "showDebug": false, "showScale": false, "showZoom": true },
+        "layers": [{
+          "config": {
+            "showLegend": true,
+            "style": {
+              "color": { "field": "value", "fixed": "dark-green" },
+              "opacity": 0.9,
+              "size": { "fixed": 10, "max": 18, "min": 4 },
+              "symbol": { "fixed": "img/icons/marker/circle.svg", "mode": "fixed" },
+              "symbolAlign": { "h": "center", "v": "center" },
+              "textConfig": { "fontSize": 10, "offsetX": 0, "offsetY": 14, "textAlign": "center", "textBaseline": "middle" }
+            }
+          },
+          "location": { "latitude": "lat", "longitude": "lon", "mode": "coords" },
+          "name": "Stations",
+          "tooltip": true,
+          "type": "markers"
+        }],
+        "onClick": { "action": "variable", "variableName": "station", "field": "station_name" },
+        "tooltip": { "mode": "details" },
+        "view": { "allLayers": true, "id": "coords", "lat": 49.498, "lon": 8.49, "zoom": 11 }
+      },
+      "targets": [{
+        "datasource": { "type": "postgres", "uid": "timescaledb" },
+        "format": "table",
+        "rawSql": "SELECT s.station_name, s.lat, s.lon, m.value\nFROM stations s\nJOIN LATERAL (\n  SELECT value FROM measurements\n  WHERE station_name = s.station_name AND metric = 'temperature'\n  ORDER BY time DESC LIMIT 1\n) m ON true\nWHERE s.lat IS NOT NULL",
+        "refId": "A"
+      }],
+      "title": "Click a station to select it",
+      "type": "geomap"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "blue",   "value": null },
+            { "color": "green",  "value": 15 },
+            { "color": "yellow", "value": 25 },
+            { "color": "orange", "value": 32 },
+            { "color": "red",    "value": 37 }
+          ]},
+          "unit": "celsius", "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 10, "x": 14, "y": 1 },
+      "id": 20,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{
+        "datasource": { "type": "postgres", "uid": "timescaledb" },
+        "format": "table",
+        "rawSql": "SELECT ROUND(AVG(value)::numeric, 1) AS \"Network Avg °C\"\nFROM (\n  SELECT DISTINCT ON (station_name) value\n  FROM measurements WHERE metric = 'temperature'\n  ORDER BY station_name, time DESC\n) t",
+        "refId": "A"
+      }],
+      "title": "Network Avg Temperature",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",    "value": null },
+            { "color": "yellow", "value": 30 },
+            { "color": "green",  "value": 50 },
+            { "color": "yellow", "value": 80 },
+            { "color": "blue",   "value": 95 }
+          ]},
+          "unit": "percent", "min": 0, "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 5, "x": 14, "y": 4 },
+      "id": 21,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{
+        "datasource": { "type": "postgres", "uid": "timescaledb" },
+        "format": "table",
+        "rawSql": "SELECT ROUND(AVG(value)::numeric, 0) AS \"Avg Humidity %\"\nFROM (\n  SELECT DISTINCT ON (station_name) value\n  FROM measurements WHERE metric = 'humidity'\n  ORDER BY station_name, time DESC\n) t",
+        "refId": "A"
+      }],
+      "title": "Network Avg Humidity",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green",  "value": null },
+            { "color": "yellow", "value": 5 },
+            { "color": "orange", "value": 10 },
+            { "color": "red",    "value": 20 }
+          ]},
+          "unit": "velocityms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 5, "x": 19, "y": 4 },
+      "id": 22,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{
+        "datasource": { "type": "postgres", "uid": "timescaledb" },
+        "format": "table",
+        "rawSql": "SELECT ROUND(AVG(value)::numeric, 1) AS \"Avg Wind m/s\"\nFROM (\n  SELECT DISTINCT ON (station_name) value\n  FROM measurements WHERE metric = 'wind_speed'\n  ORDER BY station_name, time DESC\n) t",
+        "refId": "A"
+      }],
+      "title": "Network Avg Wind Speed",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "blue",   "value": null },
+            { "color": "green",  "value": 15 },
+            { "color": "yellow", "value": 25 },
+            { "color": "orange", "value": 32 },
+            { "color": "red",    "value": 37 }
+          ]},
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 10, "x": 14, "y": 7 },
+      "id": 23,
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT 'Temperature' AS metric, ROUND(value::numeric,1) AS value FROM measurements WHERE station_name = '${station}' AND metric = 'temperature' ORDER BY time DESC LIMIT 1",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT 'Humidity' AS metric, ROUND(value::numeric,0) AS value FROM measurements WHERE station_name = '${station}' AND metric = 'humidity' ORDER BY time DESC LIMIT 1",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT 'Wind m/s' AS metric, ROUND(value::numeric,1) AS value FROM measurements WHERE station_name = '${station}' AND metric = 'wind_speed' ORDER BY time DESC LIMIT 1",
+          "refId": "C"
+        }
+      ],
+      "title": "Selected: ${station}",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 101,
+      "title": "History — ${station_display}",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 8 },
+          "unit": "celsius"
+        },
+        "overrides": [{
+          "matcher": { "id": "byRegexp", "options": "^Network" },
+          "properties": [
+            { "id": "custom.lineWidth",   "value": 1 },
+            { "id": "custom.lineStyle",   "value": { "dash": [8, 4], "fill": "dash" } },
+            { "id": "custom.fillOpacity", "value": 0 },
+            { "id": "color",              "value": { "fixedColor": "gray", "mode": "fixed" } }
+          ]
+        }]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 },
+      "id": 40,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "min", "max", "mean"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time, AVG(value) AS \"Temperature (°C)\"\nFROM measurements\nWHERE metric = 'temperature' AND $__timeFilter(time)\n  AND ('${station}' = '__all__' OR station_name = '${station}')\nGROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time,\n  CASE WHEN '${overlay}' = 'avg' THEN AVG(value)\n       ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value) END AS \"Network ${overlay_label} (°C)\"\nFROM measurements\nWHERE metric = 'temperature' AND $__timeFilter(time)\n  AND '${overlay}' != 'none' AND '${station}' != '__all__'\nGROUP BY 1 ORDER BY 1",
+          "refId": "B"
+        }
+      ],
+      "title": "Temperature History",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 8 },
+          "unit": "percent", "min": 0, "max": 100
+        },
+        "overrides": [{
+          "matcher": { "id": "byRegexp", "options": "^Network" },
+          "properties": [
+            { "id": "custom.lineWidth",   "value": 1 },
+            { "id": "custom.lineStyle",   "value": { "dash": [8, 4], "fill": "dash" } },
+            { "id": "custom.fillOpacity", "value": 0 },
+            { "id": "color",              "value": { "fixedColor": "gray", "mode": "fixed" } }
+          ]
+        }]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 25 },
+      "id": 41,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "min", "max", "mean"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time, AVG(value) AS \"Humidity (%)\"\nFROM measurements\nWHERE metric = 'humidity' AND $__timeFilter(time)\n  AND ('${station}' = '__all__' OR station_name = '${station}')\nGROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time,\n  CASE WHEN '${overlay}' = 'avg' THEN AVG(value)\n       ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value) END AS \"Network ${overlay_label} (%)\"\nFROM measurements\nWHERE metric = 'humidity' AND $__timeFilter(time)\n  AND '${overlay}' != 'none' AND '${station}' != '__all__'\nGROUP BY 1 ORDER BY 1",
+          "refId": "B"
+        }
+      ],
+      "title": "Humidity History",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 8 },
+          "unit": "velocityms"
+        },
+        "overrides": [{
+          "matcher": { "id": "byRegexp", "options": "^Network" },
+          "properties": [
+            { "id": "custom.lineWidth",   "value": 1 },
+            { "id": "custom.lineStyle",   "value": { "dash": [8, 4], "fill": "dash" } },
+            { "id": "custom.fillOpacity", "value": 0 },
+            { "id": "color",              "value": { "fixedColor": "gray", "mode": "fixed" } }
+          ]
+        }]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 25 },
+      "id": 42,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "min", "max", "mean"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time, AVG(value) AS \"Wind Speed (m/s)\"\nFROM measurements\nWHERE metric = 'wind_speed' AND $__timeFilter(time)\n  AND ('${station}' = '__all__' OR station_name = '${station}')\nGROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 minutes', time) AS time,\n  CASE WHEN '${overlay}' = 'avg' THEN AVG(value)\n       ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value) END AS \"Network ${overlay_label} (m/s)\"\nFROM measurements\nWHERE metric = 'wind_speed' AND $__timeFilter(time)\n  AND '${overlay}' != 'none' AND '${station}' != '__all__'\nGROUP BY 1 ORDER BY 1",
+          "refId": "B"
+        }
+      ],
+      "title": "Wind Speed History",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "2m",
+  "schemaVersion": 39,
+  "tags": ["weather", "mannheim"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "__all__", "value": "__all__" },
+        "hide": 2,
+        "name": "station",
+        "options": [{ "selected": true, "text": "__all__", "value": "__all__" }],
+        "query": "__all__",
+        "type": "textbox"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "postgres", "uid": "timescaledb" },
+        "definition": "SELECT CASE WHEN '${station}' = '__all__' THEN 'All Stations' ELSE '${station}' END",
+        "hide": 2,
+        "name": "station_display",
+        "query": "SELECT CASE WHEN '${station}' = '__all__' THEN 'All Stations' ELSE '${station}' END",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": { "text": "Off", "value": "none" },
+        "hide": 0,
+        "label": "Network overlay",
+        "name": "overlay",
+        "options": [
+          { "selected": true,  "text": "Off",     "value": "none" },
+          { "selected": false, "text": "Average",  "value": "avg" },
+          { "selected": false, "text": "Median",   "value": "median" }
+        ],
+        "query": "none,avg,median",
+        "type": "custom"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "postgres", "uid": "timescaledb" },
+        "definition": "SELECT CASE '${overlay}' WHEN 'avg' THEN 'Average' WHEN 'median' THEN 'Median' ELSE '' END",
+        "hide": 2,
+        "name": "overlay_label",
+        "query": "SELECT CASE '${overlay}' WHEN 'avg' THEN 'Average' WHEN 'median' THEN 'Median' ELSE '' END",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "Europe/Berlin",
+  "title": "Mannheim Wetter",
+  "uid": "mannheim-wetter",
+  "version": 6
+}
